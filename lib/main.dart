@@ -10,7 +10,7 @@ void main() async {
   await Supabase.initialize(
     url: 'https://rxcfjykqfdamsnvsrcvr.supabase.co',
     publishableKey:
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ4Y2ZqeWtxZmRhbXNudnSrY3ZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM0MTg4MjUsImV4cCI6MjEwODk5NDgyNX0.ljJIlR1kTczDT84D2FyU7k1uyFxARLSgebXmC5qLz1c',
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ4Y2ZqeWtxZmRhbXNudnNyY3ZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM0MTg4MjUsImV4cCI6MjEwODk5NDgyNX0.ljJIlR1kTczDT84D2FyU7k1uyFxARLSgebXmC5qLz1c',
   );
 
   runApp(const MyApp());

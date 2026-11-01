@@ -1,18 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'login_screen.dart';
 import 'home_screen.dart';
-import 'reset_password_screen.dart'; // Import ResetPasswordScreen
+import 'reset_password_screen.dart';
 
 void main() async {
-  WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
-  FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
+  WidgetsFlutterBinding.ensureInitialized();
 
   await Supabase.initialize(
     url: 'https://rxcfjykqfdamsnvsrcvr.supabase.co',
     publishableKey:
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ4Y2ZqeWtxZmRhbXNudnNyY3ZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM0MTg4MjUsImV4cCI6MjEwODk5NDgyNX0.ljJIlR1kTczDT84D2FyU7k1uyFxARLSgebXmC5qLz1c',
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ4Y2ZqeWtxZmRhbXNudnSrY3ZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM0MTg4MjUsImV4cCI6MjEwODk5NDgyNX0.ljJIlR1kTczDT84D2FyU7k1uyFxARLSgebXmC5qLz1c',
   );
 
   runApp(const MyApp());
@@ -37,7 +35,6 @@ class _MyAppState extends State<MyApp> {
       final AuthChangeEvent event = data.event;
 
       if (event == AuthChangeEvent.passwordRecovery) {
-        // Automatically route to ResetPasswordScreen when user clicks recovery email link
         _navigatorKey.currentState?.pushReplacement(
           MaterialPageRoute(builder: (_) => const ResetPasswordScreen()),
         );
@@ -48,12 +45,13 @@ class _MyAppState extends State<MyApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      navigatorKey: _navigatorKey, // Attached navigator key for auth listener routing
+      navigatorKey: _navigatorKey,
       debugShowCheckedModeBanner: false,
       title: 'KenemeRoute',
       theme: ThemeData(
         useMaterial3: true,
         colorSchemeSeed: const Color(0xFF0F5B33),
+        scaffoldBackgroundColor: Colors.white,
       ),
       home: const AnimatedSplashScreen(),
     );
@@ -106,8 +104,6 @@ class _AnimatedSplashScreenState extends State<AnimatedSplashScreen>
   }
 
   void _initializeApp() async {
-    FlutterNativeSplash.remove();
-
     _logoController.forward();
     await Future.delayed(const Duration(milliseconds: 300));
     _textController.forward();

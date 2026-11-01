@@ -28,8 +28,8 @@ jobs:
       - name: Get Dependencies
         run: flutter pub get
 
-      - name: Build APK
-        run: flutter build apk --release
+      - name: Build APK without local org.gradle.java.home override
+        run: flutter build apk --release -Porg.gradle.java.home=$JAVA_HOME
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4

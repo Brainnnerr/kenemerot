@@ -1,0 +1,45 @@
+name: flutter_app
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  supabase_flutter: ^2.8.0
+
+  # Networking & HTTP
+  http: ^1.2.0
+
+  # Native Splash & Maps
+  flutter_native_splash: ^2.4.1
+  flutter_map: ^8.3.2
+  latlong2: ^0.10.1
+
+  # Live GPS Location & Permissions
+  geolocator: ^13.0.2
+  permission_handler: ^11.3.1
+
+  # Device Compass / Heading Alignment
+  flutter_compass: ^0.8.0
+
+  # AR Navigation & Camera
+  camera: ^0.11.0+2
+  sensors_plus: ^6.1.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/kenemeroute-logo.png
+    - assets/images/essu.jpg

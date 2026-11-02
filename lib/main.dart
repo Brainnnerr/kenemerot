@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'login_screen.dart';
-import 'home_screen.dart';
 import 'reset_password_screen.dart';
+import 'screens/main_navigation_shell.dart';
+import 'theme_manager.dart';
+
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -12,6 +14,8 @@ void main() async {
     publishableKey:
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ4Y2ZqeWtxZmRhbXNudnNyY3ZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM0MTg4MjUsImV4cCI6MjEwODk5NDgyNX0.ljJIlR1kTczDT84D2FyU7k1uyFxARLSgebXmC5qLz1c',
   );
+// Load saved Dark/Light Mode preference from SharedPreferences
+  await ThemeManager.initTheme();
 
   runApp(const MyApp());
 }
@@ -30,13 +34,14 @@ class _MyAppState extends State<MyApp> {
   void initState() {
     super.initState();
 
-    // Listen to Auth State changes (e.g. Password Recovery event)
+    // Listen to Auth State changes (e.g. Password Recovery deep link event)
     Supabase.instance.client.auth.onAuthStateChange.listen((data) {
       final AuthChangeEvent event = data.event;
 
       if (event == AuthChangeEvent.passwordRecovery) {
-        _navigatorKey.currentState?.pushReplacement(
+        _navigatorKey.currentState?.pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const ResetPasswordScreen()),
+          (route) => false,
         );
       }
     });
@@ -44,16 +49,49 @@ class _MyAppState extends State<MyApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      navigatorKey: _navigatorKey,
-      debugShowCheckedModeBanner: false,
-      title: 'KenemeRoute',
-      theme: ThemeData(
-        useMaterial3: true,
-        colorSchemeSeed: const Color(0xFF0F5B33),
-        scaffoldBackgroundColor: Colors.white,
-      ),
-      home: const AnimatedSplashScreen(),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: ThemeManager.themeModeNotifier,
+      builder: (context, currentMode, child) {
+        return MaterialApp(
+          navigatorKey: _navigatorKey,
+          debugShowCheckedModeBanner: false,
+          title: 'KenemeRoute',
+          themeMode: currentMode,
+
+          // Light Theme Setup
+          theme: ThemeData(
+            useMaterial3: true,
+            brightness: Brightness.light,
+            colorSchemeSeed: const Color(0xFF0F5B33),
+            scaffoldBackgroundColor: const Color(0xFFF4F6F4),
+            appBarTheme: const AppBarTheme(
+              backgroundColor: Color(0xFF0F5B33),
+              foregroundColor: Colors.white,
+              elevation: 0,
+            ),
+            cardColor: Colors.white,
+          ),
+
+          // Dark Theme Setup
+          darkTheme: ThemeData(
+            useMaterial3: true,
+            brightness: Brightness.dark,
+            colorSchemeSeed: const Color(0xFF0F5B33),
+            scaffoldBackgroundColor: const Color(0xFF121212),
+            cardColor: const Color(0xFF1E1E1E),
+            appBarTheme: const AppBarTheme(
+              backgroundColor: Color(0xFF1E1E1E),
+              foregroundColor: Colors.white,
+              elevation: 0,
+            ),
+            bottomSheetTheme: const BottomSheetThemeData(
+              backgroundColor: Color(0xFF1E1E1E),
+            ),
+          ),
+
+          home: const AnimatedSplashScreen(),
+        );
+      },
     );
   }
 }
@@ -113,8 +151,10 @@ class _AnimatedSplashScreenState extends State<AnimatedSplashScreen>
     if (!mounted) return;
 
     final session = Supabase.instance.client.auth.currentSession;
+
+    // Route to MainNavigationShell for authenticated users or LoginScreen
     final Widget targetScreen =
-        (session != null) ? const HomeScreen() : const LoginScreen();
+        (session != null) ? const MainNavigationShell() : const LoginScreen();
 
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
@@ -136,8 +176,10 @@ class _AnimatedSplashScreenState extends State<AnimatedSplashScreen>
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: isDark ? const Color(0xFF121212) : Colors.white,
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -162,12 +204,12 @@ class _AnimatedSplashScreenState extends State<AnimatedSplashScreen>
             const SizedBox(height: 4),
             FadeTransition(
               opacity: _textFadeAnimation,
-              child: const Text(
+              child: Text(
                 'KenemeRoute',
                 style: TextStyle(
                   fontSize: 32,
                   fontWeight: FontWeight.bold,
-                  color: Color(0xFF0F5B33),
+                  color: isDark ? Colors.white : const Color(0xFF0F5B33),
                   letterSpacing: 1.2,
                 ),
               ),

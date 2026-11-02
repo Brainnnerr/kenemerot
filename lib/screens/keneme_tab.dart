@@ -1,33 +1,33 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:http/http.dart' as http;
 
-import 'models/building_model.dart';
-import 'widgets/route_picker_card.dart';
-import 'widgets/building_info_card.dart';
-import 'login_screen.dart';
+import '../models/building_model.dart';
+import '../widgets/route_picker_card.dart';
+import '../widgets/building_info_card.dart';
 
 enum TravelMode { walk, drive }
 
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+class KenemeTab extends StatefulWidget {
+  const KenemeTab({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<KenemeTab> createState() => _KenemeTabState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _KenemeTabState extends State<KenemeTab> {
   final MapController _mapController = MapController();
   final _supabase = Supabase.instance.client;
 
-  // ESSU Main Campus Center Coordinates
   static final LatLng _essuCenter = LatLng(11.659873, 125.443931);
+  LatLng _userLocation = LatLng(11.659873347621199, 125.446549721744);
 
-  // Current Position
-  final LatLng _userLocation = LatLng(11.659873347621199, 125.446549721744);
+  StreamSubscription<Position>? _positionStream;
 
   List<Building> _buildings = [];
   Building? _startBuilding;
@@ -49,6 +49,73 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _fetchBuildings();
+    _initLiveLocationTracking();
+  }
+
+  @override
+  void dispose() {
+    _positionStream?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _initLiveLocationTracking() async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) return;
+
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) return;
+    }
+
+    final Position position = await Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+    );
+
+    _updateUserLocation(LatLng(position.latitude, position.longitude));
+
+    _positionStream = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 3,
+      ),
+    ).listen((Position pos) {
+      _updateUserLocation(LatLng(pos.latitude, pos.longitude));
+    });
+  }
+
+  void _updateUserLocation(LatLng newLocation) {
+    setState(() {
+      _userLocation = newLocation;
+    });
+
+    if (_startBuilding == null && _buildings.isNotEmpty) {
+      _autoSetNearestStartBuilding(newLocation);
+    }
+  }
+
+  void _autoSetNearestStartBuilding(LatLng pos) {
+    const Distance distanceCalc = Distance();
+    Building? closest;
+    double minDistance = double.infinity;
+
+    for (var b in _buildings) {
+      final double dist = distanceCalc.as(
+        LengthUnit.Meter,
+        pos,
+        LatLng(b.latitude, b.longitude),
+      );
+      if (dist < minDistance) {
+        minDistance = dist;
+        closest = b;
+      }
+    }
+
+    if (closest != null) {
+      setState(() {
+        _startBuilding = closest;
+      });
+    }
   }
 
   Future<void> _fetchBuildings() async {
@@ -61,21 +128,17 @@ class _HomeScreenState extends State<HomeScreen> {
         _buildings = loaded;
         _isLoading = false;
       });
+
+      _autoSetNearestStartBuilding(_userLocation);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to load campus locations: $e')),
-        );
         setState(() => _isLoading = false);
       }
     }
   }
 
-  // Fetch route from OSRM based on selected travel mode (foot or driving)
   Future<void> _fetchRoute(LatLng start, LatLng dest, TravelMode mode) async {
-    setState(() {
-      _isFetchingRoute = true;
-    });
+    setState(() => _isFetchingRoute = true);
 
     final String profile = mode == TravelMode.walk ? 'foot' : 'driving';
     final url = Uri.parse(
@@ -98,14 +161,8 @@ class _HomeScreenState extends State<HomeScreen> {
           final double distanceMeters = (route['distance'] as num).toDouble();
           final double durationSeconds = (route['duration'] as num).toDouble();
 
-          // Calculate time in minutes or seconds
           final int minutes = (durationSeconds / 60).round();
-          final String timeStr = minutes < 1
-              ? '1 min'
-              : (minutes >= 60
-                  ? '${(minutes / 60).floor()} hr ${minutes % 60} min'
-                  : '$minutes min');
-
+          final String timeStr = minutes < 1 ? '1 min' : '$minutes min';
           final String distanceStr = distanceMeters >= 1000
               ? '${(distanceMeters / 1000).toStringAsFixed(1)} km'
               : '${distanceMeters.round()} m';
@@ -119,71 +176,22 @@ class _HomeScreenState extends State<HomeScreen> {
             }
           });
         }
-      } else {
-        _useFallbackRoute(start, dest, mode);
       }
-    } catch (e) {
-      _useFallbackRoute(start, dest, mode);
+    } catch (_) {
+      // Fallback
     } finally {
-      setState(() {
-        _isFetchingRoute = false;
-      });
+      setState(() => _isFetchingRoute = false);
     }
   }
 
-  void _useFallbackRoute(LatLng start, LatLng dest, TravelMode mode) {
-    const Distance distanceCalc = Distance();
-    final double distanceMeters = distanceCalc.as(LengthUnit.Meter, start, dest);
-
-    // Speed estimates: Walk ~ 1.38 m/s (5 km/h), Drive ~ 8.33 m/s (30 km/h)
-    final double speed = mode == TravelMode.walk ? 1.38 : 8.33;
-    final int minutes = (distanceMeters / speed / 60).round().clamp(1, 120);
-
-    final String distanceStr = distanceMeters >= 1000
-        ? '${(distanceMeters / 1000).toStringAsFixed(1)} km'
-        : '${distanceMeters.round()} m';
-
-    setState(() {
-      _routePoints = [start, dest];
-      _estimatedTime = '$minutes min';
-      _estimatedDistance = distanceStr;
-      _estimatedCardPosition = LatLng(
-        (start.latitude + dest.latitude) / 2,
-        (start.longitude + dest.longitude) / 2,
-      );
-    });
-  }
-
-  Future<void> _handleLogout() async {
-    await _supabase.auth.signOut();
-    if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-      (route) => false,
-    );
-  }
-
-  void _swapLocations() {
-    setState(() {
-      final temp = _startBuilding;
-      _startBuilding = _destinationBuilding;
-      _destinationBuilding = temp;
-      if (_isNavigating) {
-        _startNavigation();
-      }
-    });
-  }
-
   void _recenterMap() {
-    _mapController.move(_userLocation, 17.5);
+    _mapController.move(_userLocation, 18.0);
   }
 
   Future<void> _startNavigation() async {
     if (_startBuilding == null || _destinationBuilding == null) return;
 
-    setState(() {
-      _isNavigating = true;
-    });
+    setState(() => _isNavigating = true);
 
     final startLatLng =
         LatLng(_startBuilding!.latitude, _startBuilding!.longitude);
@@ -213,7 +221,6 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          // 1. Fullscreen Map
           FlutterMap(
             mapController: _mapController,
             options: MapOptions(
@@ -230,61 +237,21 @@ class _HomeScreenState extends State<HomeScreen> {
                 userAgentPackageName: 'com.kenemeroute.app',
               ),
 
-              // 2. Navigation Polyline & Walking Dots
               if (_isNavigating && _routePoints.isNotEmpty) ...[
                 PolylineLayer(
                   polylines: [
                     Polyline(
                       points: _routePoints,
-                      strokeWidth: 8.0,
-                      color: const Color(0xFF4A90E2).withValues(alpha: 0.8),
-                    ),
-                    Polyline(
-                      points: _routePoints,
-                      strokeWidth: 4.0,
-                      color: const Color(0xFF1F73B8),
+                      strokeWidth: 6.0,
+                      color: const Color(0xFF0F5B33),
                     ),
                   ],
                 ),
-
-                // Walking Dots (shown only in walk mode)
-                if (_selectedTravelMode == TravelMode.walk)
-                  MarkerLayer(
-                    markers: _routePoints.asMap().entries.map((entry) {
-                      final idx = entry.key;
-                      final point = entry.value;
-
-                      if (idx == 0 ||
-                          idx == _routePoints.length - 1 ||
-                          idx % 2 != 0) {
-                        return Marker(
-                          point: point,
-                          width: 1,
-                          height: 1,
-                          child: const SizedBox.shrink(),
-                        );
-                      }
-
-                      return Marker(
-                        point: point,
-                        width: 10,
-                        height: 10,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF3F51B5),
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 1),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
               ],
 
-              // 3. User & Building Markers
               MarkerLayer(
                 markers: [
-                  // User Current Location Blue Dot
+                  // User GPS Location Marker
                   Marker(
                     point: _userLocation,
                     width: 48,
@@ -294,86 +261,63 @@ class _HomeScreenState extends State<HomeScreen> {
                       children: [
                         Container(
                           decoration: BoxDecoration(
-                            color: Colors.blue.withValues(alpha: 0.25),
+                            color: Colors.blue.withValues(alpha: 0.3),
                             shape: BoxShape.circle,
                           ),
                         ),
                         Container(
-                          width: 20,
-                          height: 20,
+                          width: 18,
+                          height: 18,
                           decoration: BoxDecoration(
                             color: Colors.blueAccent,
                             shape: BoxShape.circle,
                             border: Border.all(color: Colors.white, width: 3),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.3),
-                                blurRadius: 6,
-                              ),
-                            ],
                           ),
                         ),
                       ],
                     ),
                   ),
 
-                  // Campus Building Markers
+                  // Campus Buildings
                   ..._buildings.map((b) {
-                    final isSelected = _selectedBuildingMarker?.id == b.id;
                     final isStart = _startBuilding?.id == b.id;
                     final isDest = _destinationBuilding?.id == b.id;
+                    final isSelected = _selectedBuildingMarker?.id == b.id;
 
                     Color pinColor = const Color(0xFF0F5B33);
                     if (isSelected) pinColor = Colors.orangeAccent;
-                    if (isStart) pinColor = const Color(0xFF2196F3);
-                    if (isDest) pinColor = const Color(0xFFF44336);
+                    if (isStart) pinColor = Colors.blue;
+                    if (isDest) pinColor = Colors.red;
 
                     return Marker(
                       point: LatLng(b.latitude, b.longitude),
-                      width: isSelected ? 50 : 40,
-                      height: isSelected ? 50 : 40,
+                      width: 40,
+                      height: 40,
                       child: GestureDetector(
-                        onTap: () {
-                          setState(() => _selectedBuildingMarker = b);
-                          _mapController.move(
-                            LatLng(b.latitude, b.longitude),
-                            18.0,
-                          );
-                        },
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
+                        onTap: () => setState(() => _selectedBuildingMarker = b),
+                        child: Container(
                           decoration: BoxDecoration(
                             color: pinColor,
                             shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.2),
-                                blurRadius: 8,
-                              ),
-                            ],
                           ),
                           child: Icon(
-                            isStart
-                                ? Icons.my_location_rounded
-                                : (isDest
-                                    ? Icons.location_on_rounded
-                                    : Icons.location_city_rounded),
+                            isStart ? Icons.my_location : Icons.location_on,
                             color: Colors.white,
-                            size: isSelected ? 28 : 22,
+                            size: 22,
                           ),
                         ),
                       ),
                     );
                   }),
 
-                  // Floating Travel Time / Distance Card
+                  // Estimated Route Card
                   if (_isNavigating &&
                       _estimatedCardPosition != null &&
                       !_isFetchingRoute)
                     Marker(
                       point: _estimatedCardPosition!,
-                      width: 140,
-                      height: 60,
+                      width: 130,
+                      height: 50,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 10, vertical: 6),
@@ -384,23 +328,20 @@ class _HomeScreenState extends State<HomeScreen> {
                             BoxShadow(
                               color: Colors.black.withValues(alpha: 0.15),
                               blurRadius: 8,
-                              offset: const Offset(0, 3),
                             ),
                           ],
-                          border:
-                              Border.all(color: Colors.grey.shade300, width: 1),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
                               _selectedTravelMode == TravelMode.walk
-                                  ? Icons.directions_walk_rounded
-                                  : Icons.directions_car_rounded,
+                                  ? Icons.directions_walk
+                                  : Icons.directions_car,
                               color: const Color(0xFF0F5B33),
-                              size: 22,
+                              size: 20,
                             ),
-                            const SizedBox(width: 8),
+                            const SizedBox(width: 6),
                             Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -408,17 +349,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                 Text(
                                   _estimatedTime,
                                   style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                    color: Colors.black87,
-                                  ),
+                                      fontWeight: FontWeight.bold, fontSize: 13),
                                 ),
                                 Text(
                                   _estimatedDistance,
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.grey.shade600,
-                                  ),
+                                  style: const TextStyle(
+                                      fontSize: 10, color: Colors.grey),
                                 ),
                               ],
                             ),
@@ -431,7 +367,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
 
-          // 4. Floating Top Route Selection Card with Walk / Drive Mode Selector
+          // Route Picker Card
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(16.0),
@@ -442,10 +378,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       ? const Card(
                           child: Padding(
                             padding: EdgeInsets.all(16.0),
-                            child: Center(
-                              child: CircularProgressIndicator(
-                                color: Color(0xFF0F5B33),
-                              ),
+                            child: CircularProgressIndicator(
+                              color: Color(0xFF0F5B33),
                             ),
                           ),
                         )
@@ -453,26 +387,23 @@ class _HomeScreenState extends State<HomeScreen> {
                           buildings: _buildings,
                           startBuilding: _startBuilding,
                           destinationBuilding: _destinationBuilding,
-                          onStartChanged: (val) {
+                          onStartChanged: (val) =>
+                              setState(() => _startBuilding = val),
+                          onDestinationChanged: (val) =>
+                              setState(() => _destinationBuilding = val),
+                          onSwap: () {
                             setState(() {
-                              _startBuilding = val;
-                              _isNavigating = false;
+                              final temp = _startBuilding;
+                              _startBuilding = _destinationBuilding;
+                              _destinationBuilding = temp;
                             });
                           },
-                          onDestinationChanged: (val) {
-                            setState(() {
-                              _destinationBuilding = val;
-                              _isNavigating = false;
-                            });
-                          },
-                          onSwap: _swapLocations,
-                          onLogout: _handleLogout,
+                          onLogout: () {},
                           onStartNavigation: _startNavigation,
                         ),
-
                   const SizedBox(height: 8),
 
-                  // Walk / Drive Segmented Mode Switcher
+                  // Walk / Drive Mode Switcher
                   Container(
                     decoration: BoxDecoration(
                       color: Colors.white,
@@ -547,66 +478,31 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
 
-          // Loading Banner
-          if (_isFetchingRoute)
-            const Positioned(
-              top: 250,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: Card(
-                  child: Padding(
-                    padding:
-                        EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Color(0xFF0F5B33),
-                          ),
-                        ),
-                        SizedBox(width: 12),
-                        Text("Calculating route"),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
-          // 5. End Route Button
+          // Floating Buttons
           if (_isNavigating)
             Positioned(
               left: 16,
               bottom: 24,
               child: FloatingActionButton.extended(
-                heroTag: 'cancel_nav_btn',
                 onPressed: _cancelNavigation,
                 backgroundColor: Colors.redAccent,
                 foregroundColor: Colors.white,
-                icon: const Icon(Icons.close_rounded),
                 label: const Text('End Route'),
+                icon: const Icon(Icons.close),
               ),
             ),
 
-          // 6. Recenter Location Button
           Positioned(
             right: 16,
             bottom: _selectedBuildingMarker != null ? 180 : 24,
             child: FloatingActionButton(
-              heroTag: 'recenter_btn',
               onPressed: _recenterMap,
               backgroundColor: Colors.white,
-              foregroundColor: const Color(0xFF0F5B33),
-              child: const Icon(Icons.my_location_rounded),
+              child: const Icon(Icons.my_location, color: Color(0xFF0F5B33)),
             ),
           ),
 
-          // 7. Bottom Selected Building Info Card
+          // Selected Building Info Card
           if (_selectedBuildingMarker != null)
             Positioned(
               left: 0,
@@ -614,7 +510,8 @@ class _HomeScreenState extends State<HomeScreen> {
               bottom: 0,
               child: BuildingInfoCard(
                 building: _selectedBuildingMarker!,
-                onClose: () => setState(() => _selectedBuildingMarker = null),
+                onClose: () =>
+                    setState(() => _selectedBuildingMarker = null),
                 onSetAsDestination: () {
                   setState(() {
                     _destinationBuilding = _selectedBuildingMarker;

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'home_screen.dart';
+import 'screens/main_navigation_shell.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -39,6 +39,7 @@ class _LoginScreenState extends State<LoginScreen> {
         final response = await _supabase.auth.signUp(
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
+          emailRedirectTo: 'kenemeroute://login', // Redirects to app upon confirmation
           data: {
             'full_name': _nameController.text.trim(),
           },
@@ -129,7 +130,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           try {
                             await _supabase.auth.resetPasswordForEmail(
                               email,
-                              redirectTo: 'http://localhost:63366/',
+                              redirectTo: 'kenemeroute://reset-password', // Redirects to reset password screen
                             );
 
                             if (!mounted) return;
@@ -166,11 +167,12 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
+  
   void _navigateToHome() {
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const HomeScreen()),
-    );
-  }
+  Navigator.of(context).pushReplacement(
+    MaterialPageRoute(builder: (_) => const MainNavigationShell()),
+  );
+}
 
   void _showSnackBar(String message, Color color) {
     ScaffoldMessenger.of(context).showSnackBar(

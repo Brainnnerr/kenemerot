@@ -10,11 +10,16 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+
   cupertino_icons: ^1.0.8
   supabase_flutter: ^2.8.0
-
+  shared_preferences: ^2.3.2
+  image_picker: ^1.1.2
   # Networking & HTTP
   http: ^1.2.0
+
+  # Google Generative AI (Gemini SDK)
+  google_generative_ai: ^0.4.0
 
   # Native Splash & Maps
   flutter_native_splash: ^2.4.1
@@ -58,3 +63,4 @@ flutter:
 
   assets:
     - assets/images/kenemeroute-logo.png
+    - assets/images/
